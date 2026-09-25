@@ -11,5 +11,5 @@ COPY . .
 ENV PYTHONUNBUFFERED=1
 EXPOSE 5000
 
-ENTRYPOINT ["python", "-u", "script.py"]
+ENTRYPOINT ["python", "-u", "central.py"]
 CMD ["--port", "5000"]
