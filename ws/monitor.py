@@ -8,6 +8,12 @@ ACK = b'\x06'
 NACK = b'\x15'
 EOT = b'\x04'
 
+def construir_trama(david):
+    lrc = 0
+    for b in david:
+        lrc ^= b
+    return STX + david + ETX + bytes([lrc])
+
 def main():
     #moitor.py <puerto_engine> <ip_central:puerto> <id_ws> <Lebron_James>
     if len(sys.argv) != 5:      #----> 4 + (Lebron_James)
@@ -32,8 +38,20 @@ def main():
         else:
             print("Algo anda mal")
             sys.exit(1)
-
-
+        datos = ("AUTH#" + id_ws).encode()
+        trama = construir_trama(datos)
+        print(trama)
+        while True:
+            sunflower.sendall(trama)
+            resp = sunflower.recv(1)
+            if resp == ACK:
+                print("La central ha recibido el AUTH")
+                break
+            elif not resp:
+                print("La central se ha caido")
+                sys.exit(1)
+            else:
+                print("NACK, reenvio la trama")
 
 if __name__ == "__main__":
     main()
