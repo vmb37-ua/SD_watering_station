@@ -8,14 +8,14 @@ ACK = b'\x06'
 NACK = b'\x15'
 EOT = b'\x04'
 
-def construir_trama(data):
+def construir_trama(david):
     lrc = 0
-    for b in data:
+    for b in david:
         lrc ^= b
-    return STX + data + ETX + bytes([lrc])
+    return STX + david + ETX + bytes([lrc])
 
 def enviar(sock, datos):
-    # manda la trama y espera 1 byte, si es NACK la manda otra vez ja
+    # mandamos la trama y esperamos 1 byte, si es NACK la mandamos otra vez ja
     trama = construir_trama(datos.encode())
     print(trama)
     while True:
@@ -53,6 +53,17 @@ def recibir(sock):
             sys.exit(1)
         buffer += trozo
 
+def esperar_engine(puerto):
+    servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)#crear socket
+    servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)#liberar socket rapidamente , por si es necessario al cerrar el monitor
+    servidor.bind(('0.0.0.0', puerto))#asociar socketal puerto, para que escuche por cualquier tarjeta de red, que escuche todo
+    servidor.listen(1)#el cocket empieza escuchar , solo 1 puede eperar en la cola
+    print("Esperando al engine en el puerto", puerto)
+    conn, addr = servidor.accept()#se queda parado hasta que se conecta el engine, conn es el socket para hablar con el , ja
+    print("Engine conectado desde", addr)
+    servidor.close()
+    return conn
+
 def main():
     #moitor.py <puerto_engine> <ip_central:puerto> <id_ws> 
     if len(sys.argv) != 4:      
@@ -80,6 +91,9 @@ def main():
         enviar(sunflower, "AUTH#" + id_ws)
         respuesta = recibir(sunflower)
         print("Respuesta de la central:", respuesta)
+
+        donkey = esperar_engine(puerto_engine)
+        donkey.close()
 
         # la central no cierra hasta que le llega el BYE
         enviar(sunflower, "BYE#" + id_ws)
