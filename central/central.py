@@ -1,4 +1,6 @@
-import socket, sqlite3, threading, os
+import socket, sqlite3, threading, os, argparse, itertools
+
+from estado import Estado
 from datetime import datetime
 
 IP = '0.0.0.0' # Es necesario escuchar en todas las interfaces de red porque no sabemos cual asigna docker al exterior
