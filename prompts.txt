@@ -1,0 +1,7 @@
+Prompt 1
+
+Genera una estructura esencial de ficheros para el proyecto y explica que va en cada uno
+
+Prompt 2
+
+Perfila el fichero estado.py, ayúdame a crearlo y a perfilar la base de datos
