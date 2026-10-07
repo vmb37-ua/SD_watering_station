@@ -61,6 +61,10 @@ class Estado:
 
         db.execute('''CREATE TABLE IF NOT EXISTS stations (id TEXT PRIMARY KEY, ubicacion TEXT, status TEXT NOT NULL,
         blocked INTEGER NOT NULL DEFAULT 0, ultimo_registro TEXT);''')
+        # Las BD creadas con versiones anteriores no tienen la columna ubicacion
+        columnas = [fila[1] for fila in db.execute("PRAGMA table_info(stations)").fetchall()]
+        if "ubicacion" not in columnas:
+            db.execute("ALTER TABLE stations ADD COLUMN ubicacion TEXT")
 
         db.execute('''CREATE TABLE IF NOT EXISTS logs_riego (id INTEGER PRIMARY KEY AUTOINCREMENT, ws_id TEXT NOT NULL REFERENCES stations(id),
         operator_id TEXT REFERENCES operators(id), started_at TEXT, ended_at TEXT, volumen_l REAL, salida TEXT);''')
