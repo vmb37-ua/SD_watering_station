@@ -1,7 +1,51 @@
-Prompt 1
+Prompt 1.1
 
 Genera una estructura esencial de ficheros para el proyecto y explica que va en cada uno
 
-Prompt 2
+Prompt 1.2
 
 Perfila el fichero estado.py, ayúdame a crearlo y a perfilar la base de datos
+
+Prompt 1.3
+
+Corrige los errores de autenticacion o seguridad basicos de central
+
+Prompt 1.4
+
+Verifica los posibles errores de base de datos que se pueden dar en central
+
+Prompt 1.5
+
+Haz la lectura de los argumentos en python para central.py
+
+Prompt 1.6
+
+Crea un panel de interfaz muy sencillo para la central
+
+Prompt 1.7
+
+Ayudame a empezar a crear el coordinador y el codigo de manejo de confluent kafka
+
+Prompt 1.8
+
+Crea la funcion para crear topics en coordinador en kafka
+
+Prompt 1.9
+
+Revisa y retoca las funciones de la sesion del riego en coordinador
+
+Prompt 1.10
+
+Pule y arregla la lógica de coordinador.py
+
+Prompt 1.11
+
+No modifiques nada del código, pero dime si existe algun errror lógico, de sintaxis o de nombres
+
+Prompt 1.12
+
+corrige los errores de nombres y logicos graves
+
+Prompt 1.13
+
+Ayudame a configurar los archivos de entorno y auxiliares de central/

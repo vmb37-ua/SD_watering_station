@@ -41,8 +41,8 @@ class Estacion:
         if self.sesion and self.sesion["estado"] == "ACTIVO":
             dicc["caudal"] = self.sesion["caudal"]
             dicc["volumen"] = self.sesion["volumen"]
-            dicc["operador"] = self.sesion["operador"]
-            dicc["tiempo_trans"] = self.sesion["tiempo_trans"]
+            dicc["operador"] = self.sesion["operator_id"]
+            dicc["transcurrido"] = self.sesion["transcurrido"]
             dicc["duracion"] = self.sesion["duracion"]
         return dicc
 
@@ -104,7 +104,7 @@ class Estado:
         db.close()
 
     # Guarda en la BD el estado de la estacion id
-    def peristencia(self, id):
+    def persistir(self, id):
         estacion = self.estaciones[id]
         db = sqlite3.connect(self.db_path)
         db.execute("UPDATE stations SET status = ?, blocked = ?, ultimo_registro = ? WHERE id = ?", (estacion.estado(), int(estacion.bloqueada), datetime.now().isoformat(), id))
