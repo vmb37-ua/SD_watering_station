@@ -1,5 +1,8 @@
-import socket, sqlite3, threading, os
-from datetime import datetime
+import socket, sqlite3, threading, os, argparse, itertools
+
+from estado import Estado
+from coordinador import Coordinador
+from panel import arrancar_panel
 
 IP = '0.0.0.0' # Es necesario escuchar en todas las interfaces de red porque no sabemos cual asigna docker al exterior
 PORT = int(os.getenv('PORT', 5000))
@@ -12,11 +15,18 @@ ACK = b'\x06'
 NACK = b'\x15'
 EOT = b'\x04'
 
+coord = None # El cordinador debe instanciarse en main
+cont_conexiones = itertools.count(1) # Usamos esta libreria para crear un iterador a 1
+
 class ManejadorDatos():
-    def __init__(self, comando="", args=[], respuesta = ""):
+    def __init__(self, conn_id, comando="", args=[], respuesta = ""):
         self.comando = comando
         self.args = args
         self.respuesta = respuesta
+        self.conn_id = conn_id
+        # Claramente no lo podemos poner a 0 o se confundiria con la estacion 0
+        # Esto nos permite saber que estacion este autenticada
+        self.ws_id = None 
     
     def leerDatos(self, datos:str):
 
@@ -25,7 +35,18 @@ class ManejadorDatos():
         self.comando = lista[0]
         self.args = lista[1:]
 
-        print(f"[LOG] Central recibido --> {self.comando} - {self.args}")
+        if self.comando != "HEART":
+            print(f"[LOG] Central recibido --> {self.comando} - {self.args}")
+
+        # Como es logico, una estacion solo puede hablar por su nombre, para ello se autentica y lo verificamos en estas condiciones
+        # Antes de autenticarse solo se permite registrarse, autenticarse o despedirse
+        if self.comando not in ("REG", "AUTH", "BYE") and self.ws_id is None:
+            self.respuesta = f"ERR#{self.comando}#Estacion no autenticada"
+            return
+        # Una conexión solo puede hablar en nombre de la estación con la que se autenticó
+        if self.comando not in ("REG", "AUTH") and self.ws_id is not None and self.args[:1] != [self.ws_id]:
+            self.respuesta = f"ERR#{self.comando}#Id de estacion incorrecto"
+            return
 
         # Aqui vamos a separar los tipos de mensaje y vamos a llamar a su manejador
         # (Echo de menos aqui el switch de C)
@@ -33,6 +54,8 @@ class ManejadorDatos():
             self.respuesta = self.manejar_AUTH()
         elif self.comando == "REG":
             self.respuesta = self.manejar_REG()
+        elif self.comando == "HEART":
+            self.respuesta = self.manejar_HEART()
         elif self.comando == "ALERT":
             self.respuesta = self.manejar_ALERT()
         elif self.comando == "CLEAR":
@@ -41,73 +64,62 @@ class ManejadorDatos():
             self.respuesta = self.manejar_BYE()
         else:
             print("Comando no reconocido:", self.comando)
+            self.respuesta = f"ERR#{self.comando}#Comando no reconocido"
 
-# TODO -> Acabar manejadores
     def manejar_AUTH(self):
         # AUTH#<estacion>
-        conn = sqlite3.connect(DB_PATH)
-        try:
-            with conn:
-                fila = conn.execute("SELECT * FROM stations WHERE id = ?", (self.args[0],)).fetchone()
-                if fila is None:
-                    conn.execute("INSERT INTO stations (id, status, blocked, ultimo_registro) VALUES (?,?,?,?)", (self.args[0], "DISPONIBLE", 0, datetime.now().isoformat()))
-                else:
-                    conn.execute("UPDATE stations SET status = ? WHERE id = ?", ("DISPONIBLE", self.args[0]))
-        except Exception as e:
-            return f"ERR_AUTH#Error de Sqlite -> {e}"
-            
-        finally:
-            conn.close()
-
-        return f"OK_AUTH#{self.args[0]}"
+        # Solo podran autenticarse las estaciones que esten guardadas en BD
+        estacion_num = self.args[0]
+        estacion = coord.estado.estaciones.get(estacion_num)
+        if estacion is None:
+            return f"KO_AUTH#{estacion_num}#Estacion no registrada"
+        self.ws_id = estacion_num
+        # Ponemos en marcha la estacion
+        coord.conectar(estacion_num, self.conn_id)
+        return f"OK_AUTH#{estacion_num}#{estacion.ubicacion}"
         
     def manejar_REG(self):
-        # REG#<estacion>#<volumen>#<caudal>
-        ...
-    def manejar_ALERT(self):
-        # ALERT#<estacion>#<motivo: LEAK|(otros)>
-        estacion = self.args[0]
-        motivo = self.args[1]
-        
-        if motivo == "LEAK":
-            status = "FUGA"
-        else:
-            status = "FUERA_SERVICIO"
-        
-        conn = sqlite3.connect(DB_PATH)
+        # REG#<estacion>#<ubicacion>
         try:
-            with conn:
-                conn.execute("UPDATE stations SET status = ?, blocked = 1, ultimo_registro = ? WHERE id = ?", (status, datetime.now().isoformat(), estacion))
+            coord.estado.registrar(self.args[0], self.args[1])
         except Exception as e:
-            return f"ERR_ALERT#Error de sqlite -> {e}"
-        finally:
-            conn.close()
-
-        return f"OK_ALERT#{estacion}"
+            return f"ERR_REG#Error de Sqlite -> {e}"
+        return f"OK_REG#{self.args[0]}"
+    
+    def manejar_ALERT(self):
+        # ALERT#<estacion>#<motivo>
+        coord.alerta(self.args[0], self.args[1])
+        return f"OK_ALERT#{self.args[0]}"
 
     def manejar_CLEAR(self):
         # CLEAR#<estacion>
-        estacion = self.args[0]
-        conn = sqlite3.connect(DB_PATH)
-        try:
-            with conn:
-                conn.execute("UPDATE stations SET status = ?, blocked = 0, ultimo_registro = ? WHERE id = ?", ("DISPONIBLE", datetime.now().isoformat(), estacion))
-        except Exception as e:
-            return f"ERR_CLEAR#{e}"
-        finally:
-            conn.close()
-
-        return f"OK_CLEAR#{estacion}"
+        coord.limpiar(self.args[0])
+        return f"OK_CLEAR#{self.args[0]}"
 
     def manejar_BYE(self):
         # BYE#<estacion>
         return f"OK_BYE#{self.args[0]}"
+
+    def manejar_HEART(self):
+        # HEART#<estacion>
+        return f"HEART_OK#{self.args[0]}"
+
 class OperadorTramas:
     '''Quizá es complicarlo demasiado, pero hacer esto y no un .find para separar las tramas
     es mucho más robusto ya que evitamos la agrupación y la fragmentación de trams al no conocer exactamente su tamaño'''
     def __init__(self, conn):
         self.conn = conn
         self.buffer = b''
+
+    def leer_control(self):
+        while not self.buffer:
+            trozo = self.conn.recv(4096)
+            if not trozo:
+                raise ConnectionError("El cliente ha cerrado")
+            self.buffer += trozo
+        b = self.buffer[:1]
+        self.buffer = self.buffer[1:]
+        return b
 
     def comprobar_lrc(self, lrc, datos):
         # Como decisión de diseño vamos a tomar el LRC solo de la parte de los datos
@@ -143,17 +155,16 @@ class OperadorTramas:
 def atender(conn, addr):
     print("Conexión desde", addr)
     op = OperadorTramas(conn)
+    # Vamos a utilizar el contador de conexiones para situar cada conexion con su estacion. Si por algun motivo la estacion duplicase conexiones se podrían evitar fallos
+    man = ManejadorDatos(next(cont_conexiones))
     try:
         while True:
-            saludo = conn.recv(1)
-            if not saludo:
-                raise ConnectionError("El cliente ha cerrado")
+            saludo = op.leer_control()
             if saludo == ENQ:
                 conn.sendall(ACK)
                 break
             conn.sendall(NACK)
 
-        man = ManejadorDatos()
         while True:
             while True:
                 try:
@@ -166,42 +177,48 @@ def atender(conn, addr):
                 break
 
             trama_respuesta = op.construir_trama(man.respuesta.encode())
-            while True:
+            for i in range(3):
                 conn.sendall(trama_respuesta)
-                if conn.recv(1) == ACK:
+                if op.leer_control() == ACK:
                     break
 
             if man.comando == "BYE":
                 break
 
-        if conn.recv(1) == EOT:
+        if op.leer_control() == EOT:
             print ("Recibido EOT, se cierra la conexion con", addr)
 
-    except (ConnectionError):
+    # OSError para el timeout
+    except (ConnectionError, OSError):
         print("Se ha cerrado la conexión con", addr)
 
     finally:
         conn.close()
+        if man.ws_id is not None:
+            coord.desconectar(man.ws_id, man.conn_id)
 
 def main():
 
-    db = sqlite3.connect(DB_PATH)
-    db.execute('''CREATE TABLE IF NOT EXISTS operators(id TEXT PRIMARY KEY, name NOT NULL, active INTEGER NOT NULL DEFAULT 1);''')
+    global coord
 
-    # status puede valer disponible, regando, fuga, fuera_servicio, offline
-    db.execute('''CREATE TABLE IF NOT EXISTS stations (id TEXT PRIMARY KEY, status TEXT NOT NULL,
-    blocked INTEGER NOT NULL DEFAULT 0, ultimo_registro TEXT);''') # Ultimo registro en formato de fecha y hora
+    parser = argparse.ArgumentParser(prog="central")
+    parser.add_argument("puerto", type=int, nargs="?", default=PORT, help="Puerto del servidor de sockets para los WM_WS_M")
+    parser.add_argument("broker", nargs="?", default=os.getenv("KAFKA_BOOTSTRAP", "localhost:9092"), help="IP:puerto del bootstrap-server de Kafka")
+    parser.add_argument("--http-port", type=int, default=int(os.getenv("HTTP_PORT", 8080)), help="Puerto del panel web")
+    parser.add_argument("--db", default=DB_PATH, help="Ruta de la base de datos SQLite")
+    argumentos = parser.parse_args()
 
-    db.execute('''CREATE TABLE IF NOT EXISTS logs_riego (id INTEGER PRIMARY KEY AUTOINCREMENT, ws_id TEXT NOT NULL REFERENCES stations(id),
-    operator_id TEXT REFERENCES operators(id), started_at TEXT, ended_at TEXT, volumen_l REAL, salida TEXT);''')
-
-    db.commit()
-    db.close()
-
+    estado = Estado(argumentos.db)
+    coord = Coordinador(estado, argumentos.broker)
+    coord.arrancar()
+    arrancar_panel(coord, argumentos.http_port)
+    
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as soc:
-        soc.bind((IP, PORT))
+        # Cambiamos las opciones de la conexion para que no haya que esperar a que linux vuelva a liberar la direccion tras cerrar
+        soc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        soc.bind((IP, argumentos.puerto))
         soc.listen()
-        print(f"Servidor escuchando en {IP}:{PORT}")
+        print(f"Servidor escuchando en {IP}:{argumentos.puerto}")
         while True:
             conn, addr = soc.accept()
             conn.settimeout(30) # Aseguramos que van a escribir en el socket
