@@ -1,4 +1,4 @@
-import socket,sys
+import socket,sys,time
 
 
 STX = b'\x02'
@@ -17,41 +17,58 @@ def construir_trama(david):
 def enviar(sock, datos):
     # mandamos la trama y esperamos 1 byte, si es NACK la mandamos otra vez ja
     trama = construir_trama(datos.encode())
-    print(trama)
     while True:
         sock.sendall(trama)
         resp = sock.recv(1)
         if resp == ACK:
-            print("La central ha recibido el", datos)
             break
         elif not resp:
-            print("La central se ha caido")
-            sys.exit(1)
+            raise ConnectionError("han cerrado la conexion")
         else:
             print("NACK, reenvio la trama")
 
 def recibir(sock):
     buffer = b''
     while True:
-        # la trama esta entera cuando tengo el ETX y un byte mas (el LRC)
+        #la trama esta entera cuando tengo el ETX y un byte mas que es el LRC
         fin = buffer.find(ETX)
         if fin != -1 and len(buffer) >= fin + 2:
-            datos = buffer[1:fin]   # me salto el STX
+            datos = buffer[1:fin]#me salto el STX
             lrc = 0
             for b in datos:
                 lrc ^= b
             if lrc == buffer[fin+1]:
                 sock.sendall(ACK)
                 return datos.decode()
-            # si el LRC no cuadra pido que la mande otra vez
+            #si el LRC no cuadra le pido que la mande otraves
             print("LRC mal, mando NACK")
             sock.sendall(NACK)
             buffer = b''
         trozo = sock.recv(1024)
         if not trozo:
-            print("La central se ha caido")
-            sys.exit(1)
+            raise ConnectionError("han cerrado la conexion")
         buffer += trozo
+
+def hablar_central(ip, puerto, id_ws, mensaje):
+    #abro una conexion nueva para cada mensaje , saludo, mensaje, BYE y EOT
+    #porque la central cierra la conexion si esta 30 segundos sin recivir nada
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sunflower:
+            sunflower.connect((ip,puerto))
+            sunflower.sendall(ENQ)
+            if sunflower.recv(1) != ACK:
+                print("Algo anda mal")
+                return None
+            enviar(sunflower, mensaje)
+            respuesta = recibir(sunflower)
+            #la central no cierra hasta que le llega el BYE
+            enviar(sunflower, "BYE#" + id_ws)
+            recibir(sunflower)
+            sunflower.sendall(EOT)#fin de la transmision
+            return respuesta
+    except OSError:
+        print("No puedo hablar con la central")
+        return None
 
 def esperar_engine(puerto):
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)#crear socket
@@ -62,6 +79,7 @@ def esperar_engine(puerto):
     conn, addr = servidor.accept()#se queda parado hasta que se conecta el engine, conn es el socket para hablar con el , ja
     print("Engine conectado desde", addr)
     servidor.close()
+    conn.settimeout(3)#si en 3 segundos no contesta lo doy por caido
     return conn
 
 def main():
@@ -79,28 +97,39 @@ def main():
 
     print(f"Monitor {id_ws} --> central  {ip_central}:{puerto_central},engine en {puerto_engine}")
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sunflower:
-        sunflower.connect((ip_central,puerto_central))
-        sunflower.sendall(ENQ)
-        respuesta = sunflower.recv(1)
-        if respuesta == ACK:
-            print("Todo bien")
-        else:
-            print("Algo anda mal")
-            sys.exit(1)
-        enviar(sunflower, "AUTH#" + id_ws)
-        respuesta = recibir(sunflower)
-        print("Respuesta de la central:", respuesta)
+    respuesta = hablar_central(ip_central, puerto_central, id_ws, "AUTH#" + id_ws)
+    if respuesta is None:
+        sys.exit(1)
+    print("Respuesta de la central:", respuesta)
 
-        donkey = esperar_engine(puerto_engine)
-        donkey.close()
+    donkey = esperar_engine(puerto_engine)
 
-        # la central no cierra hasta que le llega el BYE
-        enviar(sunflower, "BYE#" + id_ws)
-        respuesta = recibir(sunflower)
-        print("Respuesta de la central:", respuesta)
+    #cada segundo le pregunto al engine si esta bien
+    averia = False
+    huevos = 0
+    while True:
+        try:
+            enviar(donkey, "SALUD")
+            respuesta = recibir(donkey)
+        except OSError:
+            #no contesta o a cerrado la conexion
+            respuesta = "CAIDO"
+        huevos += 1
+        print(huevos, "huevos", respuesta)
 
-        sunflower.sendall(EOT)   # fin de la transmision
+        if respuesta != "OK" and not averia:
+            averia = True
+            print("Averia, aviso a la central")
+            print("Respuesta de la central:", hablar_central(ip_central, puerto_central, id_ws, "ALERT#" + id_ws + "#LEAK"))
+        elif respuesta == "OK" and averia:
+            averia = False
+            print("Averia resuelta, aviso a la central")
+            print("Respuesta de la central:", hablar_central(ip_central, puerto_central, id_ws, "CLEAR#" + id_ws))
+
+        if respuesta == "CAIDO":
+            donkey.close()
+            donkey = esperar_engine(puerto_engine)
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()

@@ -5,3 +5,7 @@ Genera una estructura esencial de ficheros para el proyecto y explica que va en 
 Prompt 2
 
 Perfila el fichero estado.py, ayúdame a crearlo y a perfilar la base de datos
+
+Prompt 2.1
+
+Revisa monitor.py y engine.py y comprueba que los latidos funcionen bien
