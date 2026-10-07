@@ -41,8 +41,8 @@ class Estacion:
         if self.sesion and self.sesion["estado"] == "ACTIVO":
             dicc["caudal"] = self.sesion["caudal"]
             dicc["volumen"] = self.sesion["volumen"]
-            dicc["operador"] = self.sesion["operador"]
-            dicc["tiempo_trans"] = self.sesion["tiempo_trans"]
+            dicc["operador"] = self.sesion["operator_id"]
+            dicc["transcurrido"] = self.sesion["transcurrido"]
             dicc["duracion"] = self.sesion["duracion"]
         return dicc
 
@@ -61,6 +61,10 @@ class Estado:
 
         db.execute('''CREATE TABLE IF NOT EXISTS stations (id TEXT PRIMARY KEY, ubicacion TEXT, status TEXT NOT NULL,
         blocked INTEGER NOT NULL DEFAULT 0, ultimo_registro TEXT);''')
+        # Las BD creadas con versiones anteriores no tienen la columna ubicacion
+        columnas = [fila[1] for fila in db.execute("PRAGMA table_info(stations)").fetchall()]
+        if "ubicacion" not in columnas:
+            db.execute("ALTER TABLE stations ADD COLUMN ubicacion TEXT")
 
         db.execute('''CREATE TABLE IF NOT EXISTS logs_riego (id INTEGER PRIMARY KEY AUTOINCREMENT, ws_id TEXT NOT NULL REFERENCES stations(id),
         operator_id TEXT REFERENCES operators(id), started_at TEXT, ended_at TEXT, volumen_l REAL, salida TEXT);''')
@@ -104,7 +108,7 @@ class Estado:
         db.close()
 
     # Guarda en la BD el estado de la estacion id
-    def peristencia(self, id):
+    def persistir(self, id):
         estacion = self.estaciones[id]
         db = sqlite3.connect(self.db_path)
         db.execute("UPDATE stations SET status = ?, blocked = ?, ultimo_registro = ? WHERE id = ?", (estacion.estado(), int(estacion.bloqueada), datetime.now().isoformat(), id))

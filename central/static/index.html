@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WM Central</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #1f2630; color: #eee; }
+  header { background: #0e4d7a; padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  header h1 { margin: 0; font-size: 1.3em; flex: 1; }
+  main { display: grid; grid-template-columns: 1fr 380px; gap: 16px; padding: 16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; align-content: start; }
+  .ws { border-radius: 8px; padding: 10px 12px; color: #111; }
+  .ws h2 { margin: 0; font-size: 1.4em; }
+  .ws .ubi { font-size: .9em; margin-bottom: 6px; }
+  .ws .dato { font-size: .95em; }
+  .ws .botones { margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .DISPONIBLE { background: #3cb44b; }
+  .REGANDO { background: #3cb44b; animation: parpadeo 1s infinite; }
+  .FUGA { background: #e6194b; color: #fff; }
+  .FUERA_SERVICIO { background: #f58231; }
+  .DESCONECTADA { background: #9a9a9a; }
+  @keyframes parpadeo { 50% { background: #a6f0ad; } }
+  button { cursor: pointer; border: 0; border-radius: 4px; padding: 4px 8px; font-size: .85em; }
+  section { background: #2b3440; border-radius: 8px; padding: 10px; }
+  section h3 { margin: 0 0 8px 0; }
+  #eventos { font-family: monospace; font-size: .8em; max-height: 60vh; overflow-y: auto; white-space: pre-wrap; }
+  input { width: 70px; }
+  table { width: 100%; font-size: .85em; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WaterManagement · CENTRAL</h1>
+  <span>Duración (s): <input id="duracion" type="number" value="30" min="1"></span>
+  <span>Todas las WS:</span>
+  <button onclick="orden('START','*')">Iniciar riego</button>
+  <button onclick="orden('BLOCK','*')">Bloquear</button>
+  <button onclick="orden('UNBLOCK','*')">Activar</button>
+</header>
+<main>
+  <div class="grid" id="estaciones">Cargando...</div>
+  <div>
+    <section>
+      <h3>Mensajes</h3>
+      <div id="eventos"></div>
+    </section>
+    <section style="margin-top:12px">
+      <h3>Operarios</h3>
+      <table id="operadores"></table>
+      <p><input id="op-id" placeholder="Id" style="width:60px"> <input id="op-nombre" placeholder="Nombre" style="width:140px">
+         <button onclick="altaOperario()">Alta</button></p>
+    </section>
+  </div>
+</main>
+<script>
+const TEXTO = { DISPONIBLE: "Disponible", REGANDO: "Regando", FUGA: "FUGA", FUERA_SERVICIO: "Fuera de Servicio", DESCONECTADA: "Desconectada" };
+
+async function post(url, cuerpo) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) });
+  const j = await r.json();
+  if (j.error) alert(j.error);
+}
+function orden(accion, ws) { post("/api/orden", { accion, ws_id: ws, duracion: +document.getElementById("duracion").value }); }
+function altaOperario() {
+  post("/api/operarios", { id: document.getElementById("op-id").value, nombre: document.getElementById("op-nombre").value });
+}
+
+async function refrescar() {
+  try {
+    const d = await (await fetch("/api/estado")).json();
+    document.getElementById("estaciones").innerHTML = d.estaciones.map(e => `
+      <div class="ws ${e.estado}">
+        <h2>${e.id}</h2>
+        <div class="ubi">${e.ubicacion}</div>
+        <div><b>${TEXTO[e.estado]}</b>${e.averia ? " (" + e.averia + ")" : ""}</div>
+        ${e.estado === "REGANDO" ? `
+          <div class="dato">Caudal: <b>${e.caudal.toFixed(1)} L/min</b></div>
+          <div class="dato">Volumen: <b>${e.volumen.toFixed(1)} L</b></div>
+          <div class="dato">Tiempo: ${e.transcurrido} / ${e.duracion} s</div>
+          <div class="dato">Operario: <b>${e.operador}</b></div>` : `<div class="dato">Caudal: 0 L/min</div>`}
+        <div class="botones">
+          <button onclick="orden('START','${e.id}')">Regar</button>
+          <button onclick="orden('BLOCK','${e.id}')">Bloquear</button>
+          <button onclick="orden('UNBLOCK','${e.id}')">Activar</button>
+        </div>
+      </div>`).join("") || "No hay estaciones registradas";
+    document.getElementById("eventos").textContent = d.eventos.join("\n");
+    document.getElementById("operadores").innerHTML = d.operadores.map(o => `<tr><td>${o.id}</td><td>${o.nombre}</td></tr>`).join("");
+  } catch (e) { document.getElementById("estaciones").textContent = "Sin conexión con CENTRAL"; }
+}
+refrescar();
+setInterval(refrescar, 1000);
+</script>
+</body>
+</html>
