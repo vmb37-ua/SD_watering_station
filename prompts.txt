@@ -53,3 +53,11 @@ Ayudame a configurar los archivos de entorno y auxiliares de central/
 Prompt 2.1
 
 Revisa monitor.py y engine.py y comprueba que los latidos funcionen bien
+
+Prompt 2.2
+
+Revisa central.py y dime que cosas tengo que cambiar en monitor.py para que se comuniquen correctamente
+
+Prompt 2.3
+
+Revisa que monitor.py y engine.py funcionen bien con la central y que al pulsar la tecla del KO salte la fuga en el panel

@@ -1,4 +1,4 @@
-import socket,sys
+import socket, sys, threading, time, os
 
 STX = b'\x02'
 ETX = b'\x03'
@@ -7,6 +7,8 @@ ACK = b'\x06'
 NACK = b'\x15'
 EOT = b'\x04'
 
+ko = False # Si esta a True hay fuga y al monitor se le contesta KO
+
 def construir_trama(datos):
     lrc = 0
     for b in datos:
@@ -14,7 +16,7 @@ def construir_trama(datos):
     return STX + datos + ETX + bytes([lrc])
 
 def enviar(sock, datos):
-    #igual que en el monitor , mando la trama y espero el ACK
+    # Igual que en el monitor, se manda la trama y se espera el ACK
     trama = construir_trama(datos.encode())
     while True:
         sock.sendall(trama)
@@ -22,8 +24,7 @@ def enviar(sock, datos):
         if resp == ACK:
             break
         elif not resp:
-            print("El monitor se ha caido")
-            sys.exit(1)
+            raise ConnectionError("el monitor ha cerrado")
         else:
             print("NACK, reenvio la trama")
 
@@ -32,7 +33,7 @@ def recibir(sock):
     while True:
         fin = buffer.find(ETX)
         if fin != -1 and len(buffer) >= fin + 2:
-            datos = buffer[1:fin]#me salto el STX
+            datos = buffer[1:fin] # Nos saltamos el STX
             lrc = 0
             for b in datos:
                 lrc ^= b
@@ -44,12 +45,23 @@ def recibir(sock):
             buffer = b''
         trozo = sock.recv(1024)
         if not trozo:
-            print("El monitor se ha caido")
-            sys.exit(1)
+            raise ConnectionError("el monitor ha cerrado")
         buffer += trozo
 
+def leer_teclado():
+    # Va en un hilo aparte porque el input se queda parado esperando y no dejaria contestar al monitor
+    global ko
+    while True:
+        tecla = input()
+        if tecla == "k":
+            ko = not ko
+            if ko:
+                print("FUGA simulada, ahora contesto KO al monitor")
+            else:
+                print("Fuga arreglada, vuelvo a contestar OK")
+
 def main():
-    #engine.py <ip_kafka:puerto> <ip_monitor:puerto>
+    # engine.py <ip_kafka:puerto> <ip_monitor:puerto>
     if len(sys.argv) != 3:
         print("Uso: python engine.py <ip_kafka:puerto> <ip_monitor:puerto>")
         sys.exit(1)
@@ -61,22 +73,37 @@ def main():
 
     print(f"Engine --> monitor {ip_monitor}:{puerto_monitor}, kafka en {dir_kafka}")
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as monitor:
-        try:
-            monitor.connect((ip_monitor,puerto_monitor))
-        except ConnectionRefusedError:
-            print("El monitor no esta arrancado")
-            sys.exit(1)
-        print("Conectado al monitor")
+    threading.Thread(target=leer_teclado, daemon=True).start()
+    print("Escribe k y enter para simular una fuga (y otra vez para arreglarla)")
 
-        #el monitor me pregunta cada segundo y le contesto que estoy bien
-        huevos = 0
-        while True:
-            mensaje = recibir(monitor)
-            if mensaje == "SALUD":
-                enviar(monitor, "OK")
-                huevos += 1
-                print(huevos, "huevos")
+    while True:
+        # Si el monitor no esta arrancado o se cae, lo volvemos a intentar cada 2 segundos
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as monitor:
+                monitor.connect((ip_monitor,puerto_monitor))
+                print("Conectado al monitor")
+
+                # El monitor pregunta cada segundo y le contestamos como estamos
+                while True:
+                    mensaje = recibir(monitor)
+                    if mensaje.startswith("SALUD"):
+                        # El numero de huevos lo manda el monitor, SALUD#<numero>
+                        huevos = mensaje.split("#")[1]
+                        if ko:
+                            enviar(monitor, "KNOCKOUT")
+                            print(huevos, "huevos KO")
+                        else:
+                            enviar(monitor, "OK")
+                            print(huevos, "huevos")
+        except OSError:
+            print("No hay monitor, lo intento otra vez")
+            time.sleep(2)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Engine apagado")
+        # Se cierra con os._exit en vez de un exit normal porque con el normal se quedaba colgado,
+        # el hilo del teclado sigue esperando una tecla
+        os._exit(0)
