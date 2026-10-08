@@ -8,6 +8,8 @@ NACK = b'\x15'
 EOT = b'\x04'
 
 ko = False # Si esta a True hay fuga y al monitor se le contesta KO
+id_ws = None # El id y la ubicacion de la estacion los manda el monitor al conectarnos
+ubicacion = None
 
 def construir_trama(datos):
     lrc = 0
@@ -61,6 +63,7 @@ def leer_teclado():
                 print("Fuga arreglada, vuelvo a contestar OK")
 
 def main():
+    global id_ws, ubicacion
     # engine.py <ip_kafka:puerto> <ip_monitor:puerto>
     if len(sys.argv) != 3:
         print("Uso: python engine.py <ip_kafka:puerto> <ip_monitor:puerto>")
@@ -95,8 +98,14 @@ def main():
                         else:
                             enviar(monitor, "OK")
                             print(huevos, "huevos")
+                    elif mensaje.startswith("ID"):
+                        # ID#<id>#<ubicacion>
+                        partes = mensaje.split("#")
+                        id_ws = partes[1]
+                        ubicacion = partes[2]
+                        print(f"Soy la estacion {id_ws} ({ubicacion})")
         except OSError:
-            print("No hay monitor, lo intento otra vez")
+            print("No hay monitor,GG, lo intento otra vez")
             time.sleep(2)
 
 if __name__ == "__main__":

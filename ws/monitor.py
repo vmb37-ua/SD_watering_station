@@ -145,6 +145,8 @@ def main():
                 donkey, addr = servidor.accept()
                 donkey.settimeout(3) # Si en 3 segundos no contesta lo damos por caido
                 print("Engine conectado desde", addr)
+                # Lo primero es decirle al engine que estacion es, el id solo lo sabe el monitor
+                enviar(donkey, "ID#" + id_ws + "#" + ubicacion)
             except OSError:
                 pass
             continue

@@ -61,3 +61,7 @@ Revisa central.py y dime que cosas tengo que cambiar en monitor.py para que se c
 Prompt 2.3
 
 Revisa que monitor.py y engine.py funcionen bien con la central y que al pulsar la tecla del KO salte la fuga en el panel
+
+Prompt 2.4
+
+Revisa como le paso el id de la estacion del monitor al engine y dime si esta bien hecho
