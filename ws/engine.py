@@ -1,4 +1,5 @@
-import socket, sys, threading, time, os
+import socket, sys, threading, time, os, json 
+from confluent_kafka import Producer, Consumer
 
 STX = b'\x02'
 ETX = b'\x03'
@@ -7,10 +8,15 @@ ACK = b'\x06'
 NACK = b'\x15'
 EOT = b'\x04'
 
+T_COMMANDS = "watering.commands" # ordenes de central a estacion
+T_EVENTS = "watering.events" # respuesta de estacion a central
+
 ko = False # Si esta a True hay fuga y al monitor se le contesta KO
 id_ws = None # El id y la ubicacion de la estacion los manda el monitor al conectarnos
 ubicacion = None
 hay_monitor = False # Para saber en el menu si estamos conectados al monitor
+dir_kafka = None
+productor = None # El productor de kafka, se crea cuando ya sabemos que estacion somos
 
 def construir_trama(datos):
     lrc = 0
@@ -50,6 +56,42 @@ def recibir(sock):
         if not trozo:
             raise ConnectionError("el monitor ha cerrado")
         buffer += trozo
+
+def enviar_kafka(topic, mensaje):
+    # A todos los mensajes les ponemos el id de la estacion y van en json, como los de la central
+    mensaje["ws_id"] = id_ws
+    productor.produce(topic, json.dumps(mensaje).encode())
+    productor.poll(0)
+
+def al_asignar(consumer, particiones):
+    # Igual que en la central, nos colocamos al final del topic para no leer ordenes viejas
+    for p in particiones:
+        p.offset = consumer.get_watermark_offsets(p, timeout=10)[1]
+    consumer.assign(particiones)
+    # Ahora que ya estamos escuchando avisamos a la central de que la estacion esta conectada
+    enviar_kafka(T_EVENTS, {"type": "ONLINE"})
+    print("Conectado a kafka, ONLINE mandado a la central")
+
+def escuchar_central():
+    # Va en otro hilo, se queda leyendo las ordenes que manda la central por kafka
+    global productor
+    productor = Producer({"bootstrap.servers": dir_kafka})
+    # Cada engine tiene su grupo, si estuvieran en el mismo las ordenes solo le llegarian a uno
+    grupo = f"engine-{id_ws}-{int(time.time())}"
+    consumer = Consumer({"bootstrap.servers": dir_kafka, "group.id": grupo, "auto.offset.reset": "latest"})
+    consumer.subscribe([T_COMMANDS], on_assign=al_asignar)
+    while True:
+        msg = consumer.poll(1.0)
+        if msg is None:
+            continue
+        if msg.error():
+            print("Error de kafka:", msg.error())
+            continue
+        orden = json.loads(msg.value())
+        # Las ordenes de todas las estaciones van por el mismo topic, solo nos interesan las nuestras
+        if orden.get("ws_id") != id_ws:
+            continue
+        print("Orden de la central:", orden["type"])
 
 def estado():
     # Devuelve en que estado esta la estacion para sacarlo en el menu
@@ -96,7 +138,7 @@ def menu():
             print("Opcion no valida")
 
 def main():
-    global id_ws, ubicacion, hay_monitor
+    global id_ws, ubicacion, hay_monitor, dir_kafka
     # engine.py <ip_kafka:puerto> <ip_monitor:puerto>
     if len(sys.argv) != 3:
         print("Uso: python engine.py <ip_kafka:puerto> <ip_monitor:puerto>")
@@ -135,9 +177,13 @@ def main():
                     elif mensaje.startswith("ID"):
                         # ID#<id>#<ubicacion>
                         partes = mensaje.split("#")
+                        primera_vez = id_ws is None
                         id_ws = partes[1]
                         ubicacion = partes[2]
                         print(f"Soy la estacion {id_ws} ({ubicacion})")
+                        # Kafka se arranca solo la primera vez, si el monitor se cae y vuelve ya esta arrancado
+                        if primera_vez:
+                            threading.Thread(target=escuchar_central, daemon=True).start()
         except OSError:
             hay_monitor = False
             print("No hay monitor,GG, lo intento otra vez")

@@ -69,3 +69,7 @@ Revisa como le paso el id de la estacion del monitor al engine y dime si esta bi
 Prompt 2.5
 
 Ayudame a hacer un menu en engine.py para simular la fuga y ver el estado de la estacion
+
+Prompt 2.6
+
+El engine me funciona con el kafka de mi pc pero con el de railway me sale un error, explicame por que no va
