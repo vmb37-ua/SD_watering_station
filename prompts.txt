@@ -65,3 +65,7 @@ Revisa que monitor.py y engine.py funcionen bien con la central y que al pulsar 
 Prompt 2.4
 
 Revisa como le paso el id de la estacion del monitor al engine y dime si esta bien hecho
+
+Prompt 2.5
+
+Ayudame a hacer un menu en engine.py para simular la fuga y ver el estado de la estacion
