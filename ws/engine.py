@@ -1,4 +1,4 @@
-import socket, sys, threading, time, os, json 
+import socket, sys, threading, time, os, json, random
 from confluent_kafka import Producer, Consumer
 
 STX = b'\x02'
@@ -10,6 +10,7 @@ EOT = b'\x04'
 
 T_COMMANDS = "watering.commands" # ordenes de central a estacion
 T_EVENTS = "watering.events" # respuesta de estacion a central
+T_TELEMETRY = "watering.telemetry" # caudal y volumen
 
 ko = False # Si esta a True hay fuga y al monitor se le contesta KO
 id_ws = None # El id y la ubicacion de la estacion los manda el monitor al conectarnos
@@ -17,6 +18,7 @@ ubicacion = None
 hay_monitor = False # Para saber en el menu si estamos conectados al monitor
 dir_kafka = None
 productor = None # El productor de kafka, se crea cuando ya sabemos que estacion somos
+riego = None # Los datos del riego que hay en marcha, si no se esta regando vale None
 
 def construir_trama(datos):
     lrc = 0
@@ -92,6 +94,51 @@ def escuchar_central():
         if orden.get("ws_id") != id_ws:
             continue
         print("Orden de la central:", orden["type"])
+        if orden["type"] == "START":
+            empezar_riego(orden)
+
+def empezar_riego(orden):
+    global riego
+    peticion = orden["request_id"]
+    # Si hay fuga o ya estamos regando no se puede empezar otro riego y se lo decimos a la central
+    if ko:
+        print("Riego rechazado, hay una fuga")
+        enviar_kafka(T_EVENTS, {"type": "REJECTED", "request_id": peticion, "reason": "Fuga detectada en la estacion"})
+        return
+    if riego is not None:
+        print("Riego rechazado, ya estamos regando")
+        enviar_kafka(T_EVENTS, {"type": "REJECTED", "request_id": peticion, "reason": "Ya hay un riego en curso"})
+        return
+    riego = {"request_id": peticion, "duracion": int(orden["duration_s"]), "segundos": 0, "volumen": 0.0}
+    print(f">>> VALVULA ABIERTA, regando {riego['duracion']} s")
+    enviar_kafka(T_EVENTS, {"type": "STARTED", "request_id": peticion})
+
+def parar_riego(motivo):
+    # Cierra la valvula y le manda a la central el resumen del riego
+    global riego
+    if riego is None:
+        return
+    segundos = riego["segundos"]
+    print(f"<<< VALVULA CERRADA ({motivo}), {riego['volumen']:.1f} L en {segundos} s")
+    enviar_kafka(T_EVENTS, {"type": "FINISHED", "request_id": riego["request_id"], "reason": motivo, "volume_l": round(riego["volumen"], 2), "elapsed_s": segundos})
+    riego = None
+
+def regar():
+    # Va en otro hilo, cada segundo mira si hay un riego en marcha y manda el caudal y el volumen
+    while True:
+        time.sleep(1)
+        r = riego
+        if r is None:
+            continue
+        # No tenemos caudalimetro de verdad, nos inventamos un caudal cerca de 20 litros por minuto
+        caudal = round(random.uniform(18, 22), 2)
+        r["volumen"] += caudal / 60
+        r["segundos"] += 1
+        segundos = r["segundos"]
+        enviar_kafka(T_TELEMETRY, {"request_id": r["request_id"], "flow_lpm": caudal, "volume_l": round(r["volumen"], 2), "elapsed_s": segundos})
+        print(f"regando... {caudal} L/min, {r['volumen']:.1f} L, {segundos}/{r['duracion']} s")
+        if segundos >= r["duracion"]:
+            parar_riego("TIMEOUT")
 
 def estado():
     # Devuelve en que estado esta la estacion para sacarlo en el menu
@@ -99,6 +146,8 @@ def estado():
         return "SIN MONITOR"
     if ko:
         return "FUGA"
+    if riego is not None:
+        return "REGANDO"
     return "DISPONIBLE"
 
 def pintar_menu():
@@ -184,6 +233,7 @@ def main():
                         # Kafka se arranca solo la primera vez, si el monitor se cae y vuelve ya esta arrancado
                         if primera_vez:
                             threading.Thread(target=escuchar_central, daemon=True).start()
+                            threading.Thread(target=regar, daemon=True).start()
         except OSError:
             hay_monitor = False
             print("No hay monitor,GG, lo intento otra vez")
