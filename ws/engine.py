@@ -19,6 +19,7 @@ hay_monitor = False # Para saber en el menu si estamos conectados al monitor
 dir_kafka = None
 productor = None # El productor de kafka, se crea cuando ya sabemos que estacion somos
 riego = None # Los datos del riego que hay en marcha, si no se esta regando vale None
+bloqueada = False # Si la central bloquea la estacion no se puede regar
 
 def construir_trama(datos):
     lrc = 0
@@ -76,7 +77,7 @@ def al_asignar(consumer, particiones):
 
 def escuchar_central():
     # Va en otro hilo, se queda leyendo las ordenes que manda la central por kafka
-    global productor
+    global productor, bloqueada
     productor = Producer({"bootstrap.servers": dir_kafka})
     # Cada engine tiene su grupo, si estuvieran en el mismo las ordenes solo le llegarian a uno
     grupo = f"engine-{id_ws}-{int(time.time())}"
@@ -96,11 +97,25 @@ def escuchar_central():
         print("Orden de la central:", orden["type"])
         if orden["type"] == "START":
             empezar_riego(orden)
+        elif orden["type"] == "STOP":
+            parar_riego("STOP")
+        elif orden["type"] == "BLOCK":
+            bloqueada = True
+            parar_riego("BLOCKED")
+        elif orden["type"] == "UNBLOCK":
+            bloqueada = False
+        elif orden["type"] == "STATE":
+            # La central nos dice si estabamos bloqueados, por ejemplo al arrancar
+            bloqueada = bool(orden.get("blocked"))
 
 def empezar_riego(orden):
     global riego
     peticion = orden["request_id"]
-    # Si hay fuga o ya estamos regando no se puede empezar otro riego y se lo decimos a la central
+    # Si hay fuga, esta bloqueada o ya estamos regando no se puede empezar otro riego y se lo decimos a la central
+    if bloqueada:
+        print("Riego rechazado, la estacion esta bloqueada")
+        enviar_kafka(T_EVENTS, {"type": "REJECTED", "request_id": peticion, "reason": "Estacion bloqueada por la central"})
+        return
     if ko:
         print("Riego rechazado, hay una fuga")
         enviar_kafka(T_EVENTS, {"type": "REJECTED", "request_id": peticion, "reason": "Fuga detectada en la estacion"})
@@ -144,6 +159,8 @@ def estado():
     # Devuelve en que estado esta la estacion para sacarlo en el menu
     if not hay_monitor:
         return "SIN MONITOR"
+    if bloqueada:
+        return "BLOQUEADA"
     if ko:
         return "FUGA"
     if riego is not None:

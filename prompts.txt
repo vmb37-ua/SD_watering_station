@@ -73,3 +73,7 @@ Ayudame a hacer un menu en engine.py para simular la fuga y ver el estado de la 
 Prompt 2.6
 
 El engine me funciona con el kafka de mi pc pero con el de railway me sale un error, explicame por que no va
+
+Prompt 2.7
+
+Cuando la central me manda STOP, BLOCK o UNBLOCK desde el panel el engine no hace nada y me deja regar con la estacion bloqueada, explicame por que no va
