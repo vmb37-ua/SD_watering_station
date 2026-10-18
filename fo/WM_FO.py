@@ -41,9 +41,9 @@ class Operario:
         consumer = Consumer({"bootstrap.servers":self.broker, "group.id" :f"fo-{self.operario}-{uuid.uuid4().hex[:6]}", "auto.offset.reset":"latest"})
         
         # Se suscribe al topic y pone el cursor al final. Lanza el evento asignado cuando esté listo
-        consumer.subscribe([T_NOTIFICATIONS], on_assign=lambda c, p: (al_final(c, p), asignado.set()))
+        consumer.subscribe([T_NOTIFICATIONS], on_assign=lambda c, p: (alFinal(c, p), asignado.set()))
         threading.Thread(target=self.bucle_consumo, args=(consumer,), daemon=True).start()
-        self.log(f"Operario {self.operador} conectándose a Kafka en {self.broker}...")
+        self.log(f"Operario {self.operario} conectándose a Kafka en {self.broker}...")
 
         # Si llega el evento en 30s
         if asignado.wait(30):
@@ -66,7 +66,7 @@ class Operario:
                     self.estaciones = m["stations"]
                 continue
             # No se leen mensajes dirigidos a otros operarios
-            if m.get("operator_id") != self.operador:
+            if m.get("operator_id") != self.operario:
                 continue 
             self.procesar(m)
 
@@ -102,11 +102,37 @@ class Operario:
         self.log(f"Petición {peticion} enviada: regar {estacion} durante {duracion}s")
         return peticion
 
+    # ================= (codigo de claude code para parsear el fichero) Modo fichero =================
+    def procesar_fichero(self, ruta):
+        # Aquí claude parsea el fichero para hacer la sintaxis de saltar comentarios, etc
+        with open(ruta, encoding="utf-8") as f:
+            servicios = [l.split("#")[0].strip() for l in f]
+        servicios = [s for s in servicios if s]
+        self.log(f"Fichero {ruta}: {len(servicios)} servicios a solicitar")
+        for i, linea in enumerate(servicios, 1):
+            partes = [x.strip() for x in linea.split(",")]
+            ws_id = partes[0]
+            duracion = int(partes[1]) if len(partes) > 1 and partes[1].isdigit() else 30
+            self.log(f"--- Servicio {i}/{len(servicios)} ---")
+
+            # Aquí mismo lanza la solicitud de riego automáticamente
+            rid = self.solicitar(ws_id, duracion)
+            
+            # Esperamos a que termine (éxito o fracaso). Si nunca llega respuesta, no nos quedamos colgados
+            limite = time.time() + TIMEOUT_RESPUESTA
+            while not self.finalizadas[rid].wait(1):
+                with self.lock:
+                    estado = self.peticiones[rid]["estado"]
+                if estado == "ENVIADA" and time.time() > limite:
+                    self.log(f"CENTRAL no ha respondido a la petición {rid}. Se pasa a la siguiente")
+                    break
+            time.sleep(ESPERA_ENTRE_SERVICIOS)
+        self.log("Fichero de servicios completado")
 
         # (Código de claude code para el panel) ================= Vista para la web =================
     def vista(self):
         with self.lock:
-            return {"operador": self.operador, "estaciones": self.estaciones,
+            return {"operador": self.operario, "estaciones": self.estaciones,
                     "peticiones": list(self.peticiones.values())[::-1][:20],
                     "mensajes": list(self.mensajes)[::-1]}
 
@@ -154,3 +180,17 @@ def main():
     p.add_argument("--fichero", help="Fichero con los servicios a solicitar")
     p.add_argument("--http-port", type=int, default=8000, help="Puerto de la interfaz web")
     a = p.parse_args()
+
+    operario = Operario(a.broker, a.operador)
+    arrancar_web(operario, a.http_port)
+    operario.iniciar()
+    if a.fichero:
+        operario.procesar_fichero(a.fichero)
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

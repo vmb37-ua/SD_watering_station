@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV PYTHONBUFFERED=1
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 ENTRYPOINT ["python", "-u", "WM_FO.py"]
