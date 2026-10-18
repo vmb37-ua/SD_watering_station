@@ -53,3 +53,11 @@ Ayudame a configurar los archivos de entorno y auxiliares de central/
 Prompt 1.14
 
 Crea el panel de control del operario de forma similar al de central
+
+Prompt 1.15
+
+Ayudame a plantear y formatear bien el "modo fichero" del operario
+
+Prompt 1.16
+
+Corrige los errores del código del operario y lístamelos. Los errores de diseño o lógica explícame por que están mal
