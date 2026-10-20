@@ -8,6 +8,7 @@ ACK = b'\x06'
 NACK = b'\x15'
 EOT = b'\x04'
 
+T_REQUESTS = "watering.requests" # peticion de riego
 T_COMMANDS = "watering.commands" # ordenes de central a estacion
 T_EVENTS = "watering.events" # respuesta de estacion a central
 T_TELEMETRY = "watering.telemetry" # caudal y volumen
@@ -98,12 +99,17 @@ def escuchar_central():
         if orden["type"] == "START":
             empezar_riego(orden)
         elif orden["type"] == "STOP":
-            parar_riego("STOP")
+            if riego is not None:
+                parar_riego("STOP")
+                # Volvemos a sacar el menu porque con las lineas del riego se habia quedado arriba
+                pintar_menu()
         elif orden["type"] == "BLOCK":
             bloqueada = True
             parar_riego("BLOCKED")
+            pintar_menu()
         elif orden["type"] == "UNBLOCK":
             bloqueada = False
+            pintar_menu()
         elif orden["type"] == "STATE":
             # La central nos dice si estabamos bloqueados, por ejemplo al arrancar
             bloqueada = bool(orden.get("blocked"))
@@ -154,6 +160,29 @@ def regar():
         print(f"regando... {caudal} L/min, {r['volumen']:.1f} L, {segundos}/{r['duracion']} s")
         if segundos >= r["duracion"]:
             parar_riego("TIMEOUT")
+            pintar_menu()
+
+def pedir_riego():
+    # El riego desde la estacion se pide a la central igual que lo haria un operario, y ella nos manda el START
+    if productor is None:
+        print("Todavia no estamos conectados a kafka")
+        return
+    # Si la estacion no esta libre la central lo iba a denegar, asi que ni lo mandamos
+    if estado() != "DISPONIBLE":
+        print("No se puede pedir riego, la estacion esta", estado())
+        return
+    try:
+        duracion = int(input("Segundos de riego: "))
+    except ValueError:
+        print("Eso no es un numero")
+        return
+    # La central solo deja regar entre 1 segundo y 1 hora, si no lo deniega y aqui no nos enterariamos
+    if duracion < 1 or duracion > 3600:
+        print("Duracion no valida, tiene que ser entre 1 y 3600 segundos")
+        return
+    # LOCAL es el operario que tiene la central para los riegos que se piden desde la propia estacion
+    enviar_kafka(T_REQUESTS, {"operator_id": "LOCAL", "duration_s": duracion})
+    print("Riego pedido a la central")
 
 def estado():
     # Devuelve en que estado esta la estacion para sacarlo en el menu
@@ -191,10 +220,17 @@ def menu():
             ko = not ko
             if ko:
                 print("FUGA simulada, ahora contesto KO al monitor")
+                # Con fuga no se puede seguir regando
+                parar_riego("LEAK")
             else:
                 print("Fuga arreglada, vuelvo a contestar OK")
-        elif opcion == "1" or opcion == "2":
-            print("Todavia no esta hecho")
+        elif opcion == "1":
+            pedir_riego()
+        elif opcion == "2":
+            if riego is None:
+                print("No hay ningun riego en marcha")
+            else:
+                parar_riego("MANUAL")
         elif opcion == "3":
             print("Estado:", estado())
         elif opcion == "0":
@@ -205,9 +241,9 @@ def menu():
 
 def main():
     global id_ws, ubicacion, hay_monitor, dir_kafka
-    # engine.py <ip_kafka:puerto> <ip_monitor:puerto>
+    # WM_WS_E.py <ip_kafka:puerto> <ip_monitor:puerto>
     if len(sys.argv) != 3:
-        print("Uso: python engine.py <ip_kafka:puerto> <ip_monitor:puerto>")
+        print("Uso: python WM_WS_E.py <ip_kafka:puerto> <ip_monitor:puerto>")
         sys.exit(1)
 
     dir_kafka = sys.argv[1]

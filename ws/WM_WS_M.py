@@ -97,9 +97,9 @@ def abrir_servidor(puerto):
     return servidor
 
 def main():
-    # monitor.py <puerto_engine> <ip_central:puerto> <id_ws> <ubicacion>
+    # WM_WS_M.py <puerto_engine> <ip_central:puerto> <id_ws> <ubicacion>
     if len(sys.argv) != 4 and len(sys.argv) != 5:
-        print("Uso: python monitor.py <puerto_engine> <ip_central:puerto> <id_ws> <ubicacion>")
+        print("Uso: python WM_WS_M.py <puerto_engine> <ip_central:puerto> <id_ws> <ubicacion>")
         sys.exit(1)
 
     puerto_engine = int(sys.argv[1])

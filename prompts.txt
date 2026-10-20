@@ -77,3 +77,7 @@ El engine me funciona con el kafka de mi pc pero con el de railway me sale un er
 Prompt 2.7
 
 Cuando la central me manda STOP, BLOCK o UNBLOCK desde el panel el engine no hace nada y me deja regar con la estacion bloqueada, explicame por que no va
+
+Prompt 2.8
+
+Dime que errores o fallos puede tener el menu del engine y ayudame a arreglarlos
