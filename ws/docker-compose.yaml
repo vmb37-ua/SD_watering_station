@@ -1,0 +1,15 @@
+services:
+  monitor:
+    build: .
+    image: wm_ws
+    command: python -u WM_WS_M.py 6000 ${CENTRAL:-caboose.proxy.rlwy.net:56851} ${WS_ID:-WS1} "${UBICACION:-Sin ubicacion}"
+
+  engine:
+    build: .
+    image: wm_ws
+    command: python -u WM_WS_E.py ${KAFKA:-caboose.proxy.rlwy.net:52141} monitor:6000
+    depends_on:
+      - monitor
+    # Hace falta para poder escribir en el menu del engine
+    stdin_open: true
+    tty: true

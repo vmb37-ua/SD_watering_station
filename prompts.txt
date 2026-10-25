@@ -61,3 +61,35 @@ Ayudame a plantear y formatear bien el "modo fichero" del operario
 Prompt 1.16
 
 Corrige los errores del código del operario y lístamelos. Los errores de diseño o lógica explícame por que están mal
+
+Prompt 2.1
+
+Revisa monitor.py y engine.py y comprueba que los latidos funcionen bien
+
+Prompt 2.2
+
+Revisa central.py y dime que cosas tengo que cambiar en monitor.py para que se comuniquen correctamente
+
+Prompt 2.3
+
+Revisa que monitor.py y engine.py funcionen bien con la central y que al pulsar la tecla del KO salte la fuga en el panel
+
+Prompt 2.4
+
+Revisa como le paso el id de la estacion del monitor al engine y dime si esta bien hecho
+
+Prompt 2.5
+
+Ayudame a hacer un menu en engine.py para simular la fuga y ver el estado de la estacion
+
+Prompt 2.6
+
+El engine me funciona con el kafka de mi pc pero con el de railway me sale un error, explicame por que no va
+
+Prompt 2.7
+
+Cuando la central me manda STOP, BLOCK o UNBLOCK desde el panel el engine no hace nada y me deja regar con la estacion bloqueada, explicame por que no va
+
+Prompt 2.8
+
+Dime que errores o fallos puede tener el menu del engine y ayudame a arreglarlos
