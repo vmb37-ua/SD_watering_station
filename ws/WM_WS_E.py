@@ -22,11 +22,11 @@ productor = None # El productor de kafka, se crea cuando ya sabemos que estacion
 riego = None # Los datos del riego que hay en marcha, si no se esta regando vale None
 bloqueada = False # Si la central bloquea la estacion no se puede regar
 
-def construir_trama(datos):
+def construir_trama(david):
     lrc = 0
-    for b in datos:
+    for b in david:
         lrc ^= b
-    return STX + datos + ETX + bytes([lrc])
+    return STX + david + ETX + bytes([lrc])
 
 def enviar(sock, datos):
     # Igual que en el monitor, se manda la trama y se espera el ACK
@@ -68,8 +68,9 @@ def enviar_kafka(topic, mensaje):
     productor.poll(0)
 
 def al_asignar(consumer, particiones):
-    # Igual que en la central, nos colocamos al final del topic para no leer ordenes viejas
+    #nos colocamos al final del topic para no leer ordenes viejas
     for p in particiones:
+        #pregunta a Kafka por los límites de la partición, si trada mas de 10 fuera
         p.offset = consumer.get_watermark_offsets(p, timeout=10)[1]
     consumer.assign(particiones)
     # Ahora que ya estamos escuchando avisamos a la central de que la estacion esta conectada
@@ -174,7 +175,7 @@ def pedir_riego():
     try:
         duracion = int(input("Segundos de riego: "))
     except ValueError:
-        print("Eso no es un numero")
+        print("Eso no es un numero manin")
         return
     # La central solo deja regar entre 1 segundo y 1 hora, si no lo deniega y aqui no nos enterariamos
     if duracion < 1 or duracion > 3600:
@@ -260,6 +261,8 @@ def main():
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as monitor:
                 monitor.connect((ip_monitor,puerto_monitor))
+                # El monitor pregunta cada segundo, si en 5 no dice nada es que se ha caido
+                monitor.settimeout(5)
                 print("Conectado al monitor")
                 hay_monitor = True
 
@@ -268,8 +271,6 @@ def main():
                     mensaje = recibir(monitor)
                     if mensaje.startswith("SALUD"):
                         # El numero de huevos lo manda el monitor, SALUD#<numero>
-                        # Los prints estan comentados para que no tapen el menu, los huevos ya salen en el monitor
-                        #huevos = mensaje.split("#")[1]
                         if ko:
                             enviar(monitor, "KNOCKOUT")
                             #print(huevos, "huevos KO")

@@ -44,7 +44,9 @@ def recibir(sock):
             print("LRC mal, mando NACK")
             sock.sendall(NACK)
             buffer = b''
-        trozo = sock.recv(1024)
+        # recv espera hasta que llegue algo
+        trozo = sock.recv(1024)#leer massssssssssssssssss
+        # Si el otro cierra bien llega un FIN de TCP y recv devuelve vacio, asi sabemos que ha cerrado
         if not trozo:
             raise ConnectionError("han cerrado la conexion")
         buffer += trozo
@@ -54,9 +56,10 @@ def conectar_central(ip, puerto, id_ws, ubicacion):
     # La central solo deja mandar ALERT y CLEAR por la misma conexion por la que se hizo el AUTH
     try:
         sunflower = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Si la central muere de golpe no llega nada, con el timeout si en 5 segundos no contesta salta un error y la damos por caida
         sunflower.settimeout(5)
         sunflower.connect((ip,puerto))
-        sunflower.sendall(ENQ)
+        sunflower.sendall(ENQ)#hay alguin?
         if sunflower.recv(1) != ACK:
             print("Algo anda mal")
             sunflower.close()
@@ -92,7 +95,7 @@ def abrir_servidor(puerto):
     servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)#liberar socket rapidamente , por si es necessario al cerrar el monitor
     servidor.bind(('0.0.0.0', puerto))#asociar socketal puerto, para que escuche por cualquier tarjeta de red, que escuche todo
     servidor.listen(1)#el cocket empieza escuchar , solo 1 puede eperar en la cola
-    servidor.settimeout(1)#el accept solo espera 1 segundo, si no el monitor se queda parado y no manda los HEART a la central
+    servidor.settimeout(1)#el accept solo espera 1 segundo, si no el monitor se queda parado y no manda los HEART a la central duro, evitar quedarse parado 
     print("Esperando al engine en el puerto", puerto)
     return servidor
 
@@ -111,17 +114,24 @@ def main():
     ubicacion = "Sin ubicacion"
     if len(sys.argv) == 5:
         ubicacion = sys.argv[4]
+    # El # separa los campos de los mensajes, si va en el id o la ubicacion la central lo corta
+    if "#" in id_ws or "#" in ubicacion:
+        print("El id y la ubicacion no pueden llevar #, es el separador de los mensajes")
+        sys.exit(1)
 
     print(f"Monitor {id_ws} --> sunflower  {ip_central}:{puerto_central},engine en {puerto_engine}")
 
+    # Si la central no esta no nos cerramos, el bucle de mas abajo lo vuelve a intentar
     central = conectar_central(ip_central, puerto_central, id_ws, ubicacion)
-    if central is None:
-        sys.exit(1)
 
     servidor = abrir_servidor(puerto_engine)
     donkey = None # El socket del engine, None si todavia no se ha conectado
 
-    averia = False
+    # Sin engine no se puede regar, asi que empezamos con averia hasta que conteste OK
+    averia = True
+    if central is not None:
+        if hablar_central(central, "ALERT#" + id_ws + "#LEAK") is None:
+            central = None#no hya conexion con central
     huevos = 0
     vueltas = 0
     while True:
@@ -143,7 +153,7 @@ def main():
             # Miramos si ha llegado el engine, el accept espera 1 segundo como mucho
             try:
                 donkey, addr = servidor.accept()
-                donkey.settimeout(3) # Si en 3 segundos no contesta lo damos por caido
+                donkey.settimeout(3) # Si muere de golpe no llega nada, asi que si en 3 segundos no contesta salta un error y lo damos por caido
                 print("Engine conectado desde", addr)
                 # Lo primero es decirle al engine que estacion es, el id solo lo sabe el monitor
                 enviar(donkey, "ID#" + id_ws + "#" + ubicacion)
