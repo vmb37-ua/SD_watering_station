@@ -1,0 +1,206 @@
+=====================================================================================
+ SIMULACRO DE CORRECCIÓN - WaterManagement (SD 26/27)
+ Guía para desplegar todo y repasar la "Guía de corrección" punto por punto
+=====================================================================================
+
+Hay dos formas de hacer el simulacro:
+
+  A) AUTOMÁTICA: ./simulacro.sh  (despliega, provoca caídas y comprueba todo solo)
+  B) MANUAL: los pasos de la sección 3, tal como se harán delante del profesor
+     (la guía exige lanzar cada proceso a mano, coincidiendo con la memoria)
+
+Conviene hacer primero la A para ver qué falla y después ensayar la B.
+
+
+-------------------------------------------------------------------------------------
+ 0. ANTES DEL DÍA (requisitos de la guía que no son código)
+-------------------------------------------------------------------------------------
+[ ] Central + Kafka + SQLite desplegados en Railway y funcionando AL LLEGAR al lab
+[ ] SQLite de central con volumen persistente en Railway (DB_PATH=/data/database.db)
+[ ] Repo en GitHub (UA_SD) con acceso concedido al profesor
+[ ] Carpetas WM_Central, WM_WS y WM_FO (ahora son central/, ws/ y fo/)
+[ ] Nombres.txt, Readme.md con instrucciones, prompts en el repo
+[ ] Sin __pycache__ en el repo (añadirlo a .gitignore)
+[ ] Memoria entregada: informe, detalle de despliegue (= sección 3) y resultados
+[ ] Guía de corrección impresa a doble cara con la columna "E." rellena
+[ ] Cada uno sabe explicar cualquier parte del código (si no, suspenso)
+[ ] Imágenes Docker ya construidas o requisitos instalados en los PCs del lab
+
+
+-------------------------------------------------------------------------------------
+ 1. DATOS QUE HACEN FALTA
+-------------------------------------------------------------------------------------
+  CENTRAL       ip:puerto del socket de central (TCP proxy de Railway)
+                ahora mismo: caboose.proxy.rlwy.net:56851
+  KAFKA         ip:puerto del bootstrap de Kafka (TCP proxy de Railway)
+                ahora mismo: caboose.proxy.rlwy.net:52141
+  CENTRAL_HTTP  URL pública del panel web de central en Railway
+                (Railway -> servicio central -> Settings -> Networking -> dominio)
+
+Para el script se pueden dejar en un fichero simulacro.env en el raíz:
+
+  CENTRAL_HTTP=https://xxxxx.up.railway.app
+  CENTRAL=caboose.proxy.rlwy.net:56851
+  KAFKA=caboose.proxy.rlwy.net:52141
+
+Operarios dados de alta por defecto en la BD: OP1, OP2, OP3, OP4 (+ LOCAL y CENTRAL).
+
+
+-------------------------------------------------------------------------------------
+ 2. SIMULACRO AUTOMÁTICO (simulacro.sh)
+-------------------------------------------------------------------------------------
+Necesita: docker, tmux, jq, curl y python3 (solo la librería estándar).
+
+  ./simulacro.sh                todos los pasos (pide confirmación antes de cada uno)
+  ./simulacro.sh desplegar      solo construye las imágenes y levanta 2 WS + 2 FO
+  ./simulacro.sh solo 9         solo el paso 9 (si no hay escenario, lo levanta)
+  ./simulacro.sh desde 9        del paso 9 al final
+  ./simulacro.sh limpiar        para y borra contenedores, ventanas y red
+
+En OTRA terminal, para ver las terminales de cada módulo:
+
+  tmux -L sim attach -t sim     (Ctrl+b n / Ctrl+b p cambian de ventana,
+                                 Ctrl+b d sale sin cerrar nada)
+
+Ventanas: WS1-m, WS1-e, WS2-m, WS2-e, fo-OP1, fo-OP2 (y WS3-*, fo-OP3 más tarde).
+Paneles web: CENTRAL_HTTP, http://localhost:8101 (OP1), http://localhost:8102 (OP2).
+
+Las caídas se simulan con "docker kill" (equivale a cerrar la terminal de golpe)
+y con Ctrl+C enviado a la ventana. Las comprobaciones se hacen consultando
+/api/estado del panel de central y del FO. Las que no se pueden comprobar solas
+(colores, mensajes en pantalla) se preguntan con [s/n].
+
+Al acabar queda un informe en simulacro_resultados_<fecha>.txt con PASS/FAIL.
+
+El paso 13 (caída de CENTRAL) es semiautomático: el script te pide que reinicies
+o pares el servicio en Railway y detecta solo cuándo cae y cuándo vuelve.
+
+OJO: las órdenes "a todas" (paso 7) afectan a todas las WS de la BD de central.
+
+
+-------------------------------------------------------------------------------------
+ 3. DESPLIEGUE MANUAL EN EL LABORATORIO (el que se enseña al profesor)
+-------------------------------------------------------------------------------------
+Escenario mínimo: la nube (Railway) + 2 PCs. PC1 con WS, PC2 con FO (o ambos).
+
+3.1 Comprobar la nube
+    - Abrir el panel de CENTRAL_HTTP: deben salir las WS ya registradas en SQLite,
+      con su ubicación y en GRIS (Desconectada).
+    - Railway -> central -> Logs abiertos en una pestaña (la "terminal" de central).
+
+3.2 Construir las imágenes (una vez por PC, sin IDE)
+      cd ws && docker build -t wm_ws . && cd ..
+      cd fo && docker build -t wm_fo . && cd ..
+      docker network create wm-net
+
+    Sin Docker:  pip install -r ws/requirements.txt  (y fo/requirements.txt)
+                 y lanzar los mismos comandos con "python" en vez de "docker run ...".
+
+3.3 PC1 - Estación WS1 (dos terminales, primero el monitor)
+    Terminal 1 (monitor):
+      docker run --rm -it --name ws1-m --network wm-net wm_ws \
+        python -u WM_WS_M.py 6000 <CENTRAL> WS1 "Parque Lo Morant"
+    Terminal 2 (engine):
+      docker run --rm -it --name ws1-e --network wm-net wm_ws \
+        python -u WM_WS_E.py <KAFKA> ws1-m:6000
+
+    Más estaciones: lo mismo con ws2-m / ws2-e, WS2 y otra ubicación.
+    Sin Docker: el engine se conecta a localhost:6000 (o a la IP del PC del monitor).
+
+3.4 PC2 - Operarios
+      docker run --rm -it -p 8001:8000 wm_fo <KAFKA> OP1
+      docker run --rm -it -p 8002:8000 wm_fo <KAFKA> OP2
+    Interfaz web: http://localhost:8001 y http://localhost:8002
+    Modo fichero:
+      docker run --rm -it -p 8003:8000 wm_fo <KAFKA> OP3 --fichero servicios.txt
+
+3.5 Terminales del engine: menú
+      1 = pedir riego, 2 = parar riego, k = simular / arreglar fuga,
+      3 = ver estado, 0 = salir
+
+
+-------------------------------------------------------------------------------------
+ 4. PRUEBAS (mismo orden que la guía y que el script)
+-------------------------------------------------------------------------------------
+Leyenda:  [ ] por comprobar   (!) según el análisis del código hoy NO se cumple
+
+-- FUNCIONAMIENTO BASE --------------------------------------------------------------
+P2  Arranque
+    [ ] Antes de conectar, las WS registradas salen en GRIS con su ubicación
+    [ ] Al arrancar monitor + engine, la WS pasa a VERDE
+    [ ] Los FO ven la lista de todas las estaciones
+
+P3  Registro / autenticación / protocolo
+    [ ] Tramas <STX>D<ETX><LRC>, ENQ/ACK, NACK si el LRC está mal  (el script lo prueba)
+    (!) "WS no registrada" se deniega en central, pero con el monitor real no se
+        puede enseñar porque siempre hace REG antes de AUTH
+
+P4  Riego desde un FO (OP1 -> WS1, 15 s)
+    [ ] FO: "Riego AUTORIZADO", telemetría cada segundo, resumen final con litros
+    [ ] Central: verde parpadeante, L/min, litros acumulados y "OP1"
+    [ ] OP2 NO ve los mensajes del riego de OP1, pero sí todas las WS
+    (!) Central no muestra el total de agua suministrada por WS fuera del riego
+
+P5  Denegaciones
+    [ ] WS que no existe, duración no válida, WS ocupada, operario no dado de alta
+
+P6  Riego desde el menú de la WS (1 + segundos); parar con 2
+    [ ] Central lo muestra con operario LOCAL
+
+P7  Órdenes de central (botones de cada WS y de "Todas las WS")
+    [ ] Iniciar riego en una / en todas
+    [ ] Bloquear: corta el riego en curso y pasa a NARANJA
+    (!) La leyenda dice "Fuera de Servicio" y la guía pide "Out of Service"
+    [ ] Activar: vuelve a VERDE
+
+P8  Fuga: tecla k + Enter en el engine durante un riego
+    [ ] WS en ROJO en central en ~1-3 s; el riego se corta y el FO recibe el resumen
+    [ ] El monitor muestra la avería; un riego pedido ahora se deniega
+    [ ] k otra vez: vuelve a VERDE
+
+-- RESILIENCIA ----------------------------------------------------------------------
+P9  Cae el MONITOR (Ctrl+C o cerrar la terminal) durante un riego
+    [ ] Central: GRIS (Desconectada); el riego se corta; el FO recibe el resumen
+    [ ] El engine no deja regar ni desde su menú
+    (!) El engine muestra "SIN MONITOR" pero no repinta el menú solo (pulsar 3)
+    [ ] Al volver el monitor: VERDE sin reiniciar nada más
+    [ ] Monitor y engine caídos a la vez: GRIS
+
+P10 Cae el ENGINE durante un riego
+    [ ] Central: ROJO (averiada); el FO recibe aviso y resumen con lo regado
+    (!) Al volver, el engine NO envía el estado final del riego (no lo guarda)
+    [ ] Al volver el engine: VERDE
+
+P11 WS con monitor pero sin engine
+    (!) Central la muestra VERDE; según la tabla de la guía debería salir ROJA
+
+P12 Cae un FO mientras se le riega
+    [ ] El riego sigue hasta el final
+    (!) Al volver, el FO NO ve el resultado (empieza a leer desde el final del topic
+        y no guarda nada en disco)
+
+P13 Cae CENTRAL (Railway -> Restart) durante un riego
+    [ ] Las WS siguen regando hasta acabar
+    [ ] El monitor dice que no puede conectar con central y reconecta solo al volver
+    [ ] Al volver, central carga las WS de SQLite
+    (!) El FO y el engine no muestran "Imposible conectar con WM_Central"
+    (!) El riego hecho durante la caída se pierde: central no guarda las sesiones y
+        lee Kafka desde el final, así que no recibe el FINISHED
+    (!) Una petición hecha con central caída se queda en ENVIADA para siempre
+    (!) Un monitor arrancado con central caída se cierra en vez de reintentar
+
+P14 Nuevas instancias en caliente (WS3 + FO OP3)
+    [ ] Funcionan sin afectar a las demás
+
+-- GENERAL --------------------------------------------------------------------------
+P15 [ ] Ninguna terminal muestra Tracebacks de Python
+    [ ] Mensajes claros y profesionales (ahora hay "sunflower", "donkey", "huevos", "GG")
+    [ ] La memoria describe este mismo despliegue
+
+
+-------------------------------------------------------------------------------------
+ 5. RECUPERAR EL ESCENARIO SI ALGO SE QUEDA COLGADO
+-------------------------------------------------------------------------------------
+  ./simulacro.sh limpiar
+  docker ps                 (ver si queda algún contenedor sim-*)
+  Central: Railway -> Restart. Las WS se reconectan solas; los FO no necesitan reinicio.

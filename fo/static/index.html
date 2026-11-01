@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WM Operario</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 12px; background: #f4f6f8; }
+  h1 { font-size: 1.3em; }
+  section { background: #fff; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { padding: 4px 8px; text-align: left; border-bottom: 1px solid #ddd; }
+  .DISPONIBLE { background: #3cb44b; } .REGANDO { background: #8fe39a; } .FUGA { background: #e6194b; color: #fff; }
+  .FUERA_SERVICIO { background: #f58231; } .DESCONECTADA { background: #aaa; }
+  .DENEGADA { color: #c00; } .FINALIZADA { color: #555; } .REGANDO-p { color: #080; font-weight: bold; }
+  #mensajes { font-family: monospace; font-size: .85em; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<h1>WaterManagement · Operario <span id="op"></span></h1>
+
+<section>
+  <h3>Solicitar riego</h3>
+  Estación <select id="ws"></select>
+  Duración (s) <input id="dur" type="number" value="30" min="1" style="width:70px">
+  <button onclick="solicitar()">Solicitar</button>
+</section>
+
+<section><h3>Mis riegos</h3><table id="peticiones"></table></section>
+<section><h3>Estaciones</h3><table id="estaciones"></table></section>
+<section><h3>Mensajes de CENTRAL</h3><div id="mensajes"></div></section>
+
+<script>
+async function solicitar() {
+  const ws_id = document.getElementById("ws").value;
+  if (!ws_id) return alert("Elige una estación");
+  await fetch("/api/solicitar", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ws_id, duracion: +document.getElementById("dur").value }) });
+}
+async function refrescar() {
+  const d = await (await fetch("/api/estado")).json();
+  document.getElementById("op").textContent = d.operador;
+  document.getElementById("estaciones").innerHTML = "<tr><th>Id</th><th>Ubicación</th><th>Estado</th></tr>" +
+    d.estaciones.map(e => `<tr><td>${e.id}</td><td>${e.ubicacion}</td><td class="${e.estado}">${e.estado}</td></tr>`).join("");
+  const sel = document.getElementById("ws"), actual = sel.value;
+  sel.innerHTML = d.estaciones.filter(e => e.estado === "DISPONIBLE").map(e => `<option>${e.id}</option>`).join("");
+  sel.value = actual;
+  document.getElementById("peticiones").innerHTML = "<tr><th>Petición</th><th>WS</th><th>Estado</th><th>Caudal</th><th>Volumen</th><th>Tiempo</th><th></th></tr>" +
+    d.peticiones.map(p => `<tr><td>${p.request_id}</td><td>${p.ws_id}</td><td class="${p.estado}-p ${p.estado}">${p.estado}</td>
+      <td>${p.caudal.toFixed(1)} L/min</td><td>${p.volumen.toFixed(1)} L</td><td>${p.transcurrido}/${p.duracion} s</td><td>${p.resumen}</td></tr>`).join("");
+  document.getElementById("mensajes").textContent = d.mensajes.join("\n");
+}
+refrescar();
+setInterval(refrescar, 1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Fichero que pide el enunciado para automatizar las pruebas
+# Servicios que solicitará WM_FO con --fichero (uno por línea)
+# <ID_WS>,<duración en segundos>
+WS1,10
+WS2,10
+WS9,10
+WS1,8
