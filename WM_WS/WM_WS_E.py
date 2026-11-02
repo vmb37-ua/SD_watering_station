@@ -22,11 +22,11 @@ productor = None # El productor de kafka, se crea cuando ya sabemos que estacion
 riego = None # Los datos del riego que hay en marcha, si no se esta regando vale None
 bloqueada = False # Si la central bloquea la estacion no se puede regar
 
-def construir_trama(david):
+def construir_trama(datos):
     lrc = 0
-    for b in david:
+    for b in datos:
         lrc ^= b
-    return STX + david + ETX + bytes([lrc])
+    return STX + datos + ETX + bytes([lrc])
 
 def enviar(sock, datos):
     # Igual que en el monitor, se manda la trama y se espera el ACK
@@ -175,7 +175,7 @@ def pedir_riego():
     try:
         duracion = int(input("Segundos de riego: "))
     except ValueError:
-        print("Eso no es un numero manin")
+        print("Eso no es un numero")
         return
     # La central solo deja regar entre 1 segundo y 1 hora, si no lo deniega y aqui no nos enterariamos
     if duracion < 1 or duracion > 3600:
@@ -270,13 +270,13 @@ def main():
                 while True:
                     mensaje = recibir(monitor)
                     if mensaje.startswith("SALUD"):
-                        # El numero de huevos lo manda el monitor, SALUD#<numero>
+                        # El numero de latido lo manda el monitor, SALUD#<numero>
                         if ko:
-                            enviar(monitor, "KNOCKOUT")
-                            #print(huevos, "huevos KO")
+                            enviar(monitor, "KO")
+                            #print(latidos, "latidos KO")
                         else:
                             enviar(monitor, "OK")
-                            #print(huevos, "huevos")
+                            #print(latidos, "latidos")
                     elif mensaje.startswith("ID"):
                         # ID#<id>#<ubicacion>
                         partes = mensaje.split("#")
@@ -290,7 +290,7 @@ def main():
                             threading.Thread(target=regar, daemon=True).start()
         except OSError:
             hay_monitor = False
-            print("No hay monitor,GG, lo intento otra vez")
+            print("No hay monitor, lo intento otra vez")
             time.sleep(2)
 
 if __name__ == "__main__":

@@ -1,3 +1,6 @@
 */.env
 
 simulacro_resultados_*.txt
+__pycache__/
+*.pyc
+*.db

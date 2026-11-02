@@ -18,9 +18,9 @@ Conviene hacer primero la A para ver qué falla y después ensayar la B.
 [ ] Central + Kafka + SQLite desplegados en Railway y funcionando AL LLEGAR al lab
 [ ] SQLite de central con volumen persistente en Railway (DB_PATH=/data/database.db)
 [ ] Repo en GitHub (UA_SD) con acceso concedido al profesor
-[ ] Carpetas WM_Central, WM_WS y WM_FO (ahora son central/, ws/ y fo/)
+[x] Carpetas WM_Central, WM_WS y WM_FO
 [ ] Nombres.txt, Readme.md con instrucciones, prompts en el repo
-[ ] Sin __pycache__ en el repo (añadirlo a .gitignore)
+[x] Sin __pycache__ en el repo (añadirlo a .gitignore)
 [ ] Memoria entregada: informe, detalle de despliegue (= sección 3) y resultados
 [ ] Guía de corrección impresa a doble cara con la columna "E." rellena
 [ ] Cada uno sabe explicar cualquier parte del código (si no, suspenso)
@@ -89,11 +89,11 @@ Escenario mínimo: la nube (Railway) + 2 PCs. PC1 con WS, PC2 con FO (o ambos).
     - Railway -> central -> Logs abiertos en una pestaña (la "terminal" de central).
 
 3.2 Construir las imágenes (una vez por PC, sin IDE)
-      cd ws && docker build -t wm_ws . && cd ..
-      cd fo && docker build -t wm_fo . && cd ..
+      cd WM_WS && docker build -t wm_ws . && cd ..
+      cd WM_FO && docker build -t wm_fo . && cd ..
       docker network create wm-net
 
-    Sin Docker:  pip install -r ws/requirements.txt  (y fo/requirements.txt)
+    Sin Docker:  pip install -r WM_WS/requirements.txt  (y WM_FO/requirements.txt)
                  y lanzar los mismos comandos con "python" en vez de "docker run ...".
 
 3.3 PC1 - Estación WS1 (dos terminales, primero el monitor)

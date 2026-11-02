@@ -8,11 +8,11 @@ ACK = b'\x06'
 NACK = b'\x15'
 EOT = b'\x04'
 
-def construir_trama(david):
+def construir_trama(datos):
     lrc = 0
-    for b in david:
+    for b in datos:
         lrc ^= b
-    return STX + david + ETX + bytes([lrc])
+    return STX + datos + ETX + bytes([lrc])
 
 def enviar(sock, datos):
     # Mandamos la trama y esperamos 1 byte, si es NACK la mandamos otra vez
@@ -55,39 +55,39 @@ def conectar_central(ip, puerto, id_ws, ubicacion):
     # Una sola conexion que se queda abierta: saludo, REG y AUTH
     # La central solo deja mandar ALERT y CLEAR por la misma conexion por la que se hizo el AUTH
     try:
-        sunflower = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        central = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Si la central muere de golpe no llega nada, con el timeout si en 5 segundos no contesta salta un error y la damos por caida
-        sunflower.settimeout(5)
-        sunflower.connect((ip,puerto))
-        sunflower.sendall(ENQ)#hay alguin?
-        if sunflower.recv(1) != ACK:
-            print("Algo anda mal")
-            sunflower.close()
+        central.settimeout(5)
+        central.connect((ip,puerto))
+        central.sendall(ENQ)#hay alguin?
+        if central.recv(1) != ACK:
+            print("La central no ha contestado al saludo")
+            central.close()
             return None
         # Nos registramos siempre, si la estacion ya existe la central solo le cambia la ubicacion
-        enviar(sunflower, "REG#" + id_ws + "#" + ubicacion)
-        print("Respuesta de sunflower:", recibir(sunflower))
-        enviar(sunflower, "AUTH#" + id_ws)
-        respuesta = recibir(sunflower)
-        print("Respuesta de sunflower:", respuesta)
+        enviar(central, "REG#" + id_ws + "#" + ubicacion)
+        print("Respuesta de la central:", recibir(central))
+        enviar(central, "AUTH#" + id_ws)
+        respuesta = recibir(central)
+        print("Respuesta de la central:", respuesta)
         if not respuesta.startswith("OK_AUTH"):
-            sunflower.close()
+            central.close()
             return None
-        return sunflower
+        return central
     except OSError:
-        print("No puedo hablar con sunflower")
+        print("No puedo hablar con la central")
         return None
 
-def hablar_central(sunflower, mensaje):
+def hablar_central(central, mensaje):
     # Se manda por la conexion que ya esta abierta
-    if sunflower is None:
+    if central is None:
         return None
     try:
-        enviar(sunflower, mensaje)
-        return recibir(sunflower)
+        enviar(central, mensaje)
+        return recibir(central)
     except OSError:
-        print("No puedo hablar con sunflower")
-        sunflower.close()
+        print("No puedo hablar con la central")
+        central.close()
         return None
 
 def abrir_servidor(puerto):
@@ -119,20 +119,20 @@ def main():
         print("El id y la ubicacion no pueden llevar #, es el separador de los mensajes")
         sys.exit(1)
 
-    print(f"Monitor {id_ws} --> sunflower  {ip_central}:{puerto_central},engine en {puerto_engine}")
+    print(f"Monitor {id_ws} --> central {ip_central}:{puerto_central}, engine en {puerto_engine}")
 
     # Si la central no esta no nos cerramos, el bucle de mas abajo lo vuelve a intentar
     central = conectar_central(ip_central, puerto_central, id_ws, ubicacion)
 
     servidor = abrir_servidor(puerto_engine)
-    donkey = None # El socket del engine, None si todavia no se ha conectado
+    engine = None # El socket del engine, None si todavia no se ha conectado
 
     # Sin engine no se puede regar, asi que empezamos con averia hasta que conteste OK
     averia = True
     if central is not None:
         if hablar_central(central, "ALERT#" + id_ws + "#LEAK") is None:
             central = None#no hya conexion con central
-    huevos = 0
+    latidos = 0
     vueltas = 0
     while True:
         vueltas += 1
@@ -149,47 +149,47 @@ def main():
             if hablar_central(central, "HEART#" + id_ws) is None:
                 central = None
 
-        if donkey is None:
+        if engine is None:
             # Miramos si ha llegado el engine, el accept espera 1 segundo como mucho
             try:
-                donkey, addr = servidor.accept()
-                donkey.settimeout(3) # Si muere de golpe no llega nada, asi que si en 3 segundos no contesta salta un error y lo damos por caido
+                engine, addr = servidor.accept()
+                engine.settimeout(3) # Si muere de golpe no llega nada, asi que si en 3 segundos no contesta salta un error y lo damos por caido
                 print("Engine conectado desde", addr)
                 # Lo primero es decirle al engine que estacion es, el id solo lo sabe el monitor
-                enviar(donkey, "ID#" + id_ws + "#" + ubicacion)
+                enviar(engine, "ID#" + id_ws + "#" + ubicacion)
             except OSError:
                 pass
             continue
 
         # Cada segundo le preguntamos al engine si esta bien
-        huevos += 1
+        latidos += 1
         try:
             # Le mandamos tambien el numero para que el engine lleve la misma cuenta
-            enviar(donkey, "SALUD#" + str(huevos))
-            respuesta = recibir(donkey)
+            enviar(engine, "SALUD#" + str(latidos))
+            respuesta = recibir(engine)
         except OSError:
             # No contesta o ha cerrado la conexion
-            respuesta = "ROTOS"
-        print(huevos, "huevos", respuesta)
+            respuesta = "SIN_RESPUESTA"
+        print("Latido", latidos, respuesta)
 
         if respuesta != "OK" and not averia:
             averia = True
-            print("Averia, aviso a sunflower")
+            print("Averia, aviso a la central")
             respuesta_central = hablar_central(central, "ALERT#" + id_ws + "#LEAK")
-            print("Respuesta de sunflower:", respuesta_central)
+            print("Respuesta de la central:", respuesta_central)
             if respuesta_central is None:
                 central = None
         elif respuesta == "OK" and averia:
             averia = False
-            print("Averia resuelta, aviso a sunflower")
+            print("Averia resuelta, aviso a la central")
             respuesta_central = hablar_central(central, "CLEAR#" + id_ws)
-            print("Respuesta de sunflower:", respuesta_central)
+            print("Respuesta de la central:", respuesta_central)
             if respuesta_central is None:
                 central = None
 
-        if respuesta == "ROTOS":
-            donkey.close()
-            donkey = None
+        if respuesta == "SIN_RESPUESTA":
+            engine.close()
+            engine = None
             print("Esperando al engine en el puerto", puerto_engine)
         time.sleep(1)
 
