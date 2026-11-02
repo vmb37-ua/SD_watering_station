@@ -93,3 +93,7 @@ Cuando la central me manda STOP, BLOCK o UNBLOCK desde el panel el engine no hac
 Prompt 2.8
 
 Dime que errores o fallos puede tener el menu del engine y ayudame a arreglarlos
+
+Prompt 1.17
+
+Crea un script de bash que ejecute un simulacro de la defensa automáticamente
