@@ -15,8 +15,8 @@ TIMEOUT_RESPUESTA = 30
 
 # Al asignar las particiones nos ponemos a la cola
 def alFinal(consumidor, particiones):
-    for p in particiones:
-        p.offset = consumidor.get_watermark_offsets(p, timeout=10)[1]
+    #for p in particiones:
+        #p.offset = consumidor.get_watermark_offsets(p, timeout=10)[1]
     consumidor.assign(particiones)
 
 class Operario:
